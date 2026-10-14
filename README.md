@@ -7,7 +7,7 @@
 
 이 폴더는 2026-10-13에 확정한 v2 구조로 **처음부터 새로 만든** 데이터셋입니다.
 
-- 이전 데이터(`/home/openit/WS/augmentation_scale_20261011`, toy dataset v1·v2)와 시드는 쓰지 않습니다.
+- 이전 데이터(`/home/openit/WS/old version/augmentation_scale_20261011`, toy dataset v1·v2)와 시드는 쓰지 않습니다.
 - 모든 시나리오는 `source = new_sampled`입니다.
 - 상담원 질문 표현 모음(`data/question_bank.json`)도 첫 실행 때 새로 만들었습니다.
 
@@ -16,8 +16,10 @@
 | 생성 모델 | Qwen3-30B-A3B-Instruct-2507 (로컬 GPU, vLLM) |
 | 정답 기준 | 정규화기 `openit-normalizer` routing_policy v1.0 (읽기만 함) |
 | 목표 | 시나리오 5,000개 = LoRA-A 5,000건 + LoRA-B 5,000건, 여기에 LoRA-B 전용 START 150건 |
+| 현재 (T1 빌드) | 5,077턴(train 3,982 / val 549 / test 546) + START 110건 |
 | 분할 | scenario_family 단위 train/val/test = 80/10/10 |
-| 사람 검수 | 전부 pending (검수 큐: `review/review_queue.csv`) |
+| 검증 | 생성 7단계 + 빌드 + 사후(`verify_sql --final` 5,077/5,077 일치). 자세한 내용은 3장 |
+| 사람 검수 | 진행 전 (검수 큐 `review/review_queue.csv`, 검수 페이지 반영은 3.5) |
 
 ## 1. 구조
 
@@ -139,27 +141,90 @@
 
 ## 3. 생성 과정과 검증
 
-시나리오 하나는 아래 순서로 만듭니다.
+### 3.1 원칙
 
-1. **canonical 샘플(`sampler.py`):** 문항·pattern·값을 고정 시드 난수로 먼저 정합니다.
-   - 정규화기를 돌려서 나온 plan이 그 pattern에 맞을 때만 씁니다.
-2. **환자 발화 생성(LLM):** canonical 하나에서 말투가 다른 발화 4개를 만들고, 다중 턴이면 앞 대화도 만듭니다.
-3. **발화 검사:** 길이, 화자 혼동, 메모 노출, 글말, 질문·메모 베끼기, 새 숫자, 어림 표현, 문진표 낱말, 군말, 숫자 말투, 예시 베끼기, 중복, 앞 대화가 앞뒤가 맞는지 확인합니다.
-4. **역추출(LLM, 정답을 보지 않음):** 발화만 보고 다시 추출해 정규화기에 돌립니다. canonical 정답과 핵심이 같아야 통과합니다.
-5. **발화 자연스러움 판정(LLM):** 실패 유형 9가지 중 하나라도 있으면 버립니다.
-6. **정규화기 재실행:** 결과가 같아야 하고, 두 번 돌려 같은 결과가 나와야 합니다.
-7. **v2 LoRA-A 정답과 LoRA-B 입력(`labels.py`):** 정규화기 결과를 옮기기만 합니다.
-8. **LoRA-B 응답 생성(LLM):** action·next.type별 좋은 예와 나쁜 예를 넣어 만듭니다.
-9. **응답 가드(`checks.check_response`):**
-   - 길이, 의료 조언, 코드 노출, 보고체, 존댓말 겹침, 유도 질문, 새 숫자
-   - 끝맺음(END 마무리, NEXT·SAME 질문), START 인사
-   - 다른 질환 이름, 없는 어림 표현, 술 단위·기간 바꿈, 여러 양 누락
-   - 질문 두 개(REASK·CONFIRM), 확인할 때 이전 값을 말했는지, 잡담에 반응했는지
-   - 환자 말 복사, 예시 베끼기, 중복
-10. **응답 판정(LLM):** action·next와 맞는지, 자연스러운지(3점 이상) 봅니다. 실패하면 말투와 시드를 바꿔 최대 3번 다시 만듭니다.
-11. **DB 왕복:** 임시 SQLite에 저장했다가 조회해서 값이 같은지 확인합니다.
+- **정답은 정규화기가 정하고, LLM은 사람이 하는 말만 씁니다.**
+  - LLM이 쓰는 것: 환자 발화, 상담원 응답(LoRA-B), 역추출과 판정
+  - 정규화기가 정하는 것: 저장 값, 상태, 절차(action), 다음 문항. 이 결과를 `labels.py`가 v2 형식으로 옮깁니다.
+- **검증은 정답을 고치지 않습니다.** 검사에 걸린 후보는 버리고 사유 코드를 남깁니다(`checks.Reject`).
+- **검증은 세 번 합니다.** 레코드를 만들 때(생성), 학습 파일로 묶을 때(빌드), 다 만든 뒤(사후)입니다. 그 위에 사람 검수가 있습니다.
 
-자동 판정은 같은 모델이 하는 것이라서 사람 검수를 대신하지 않습니다. 탈락 사유는 `data/generated/status_*.json`과 `rejects/`에 남습니다.
+```
+[생성] sampler ─ 발화 생성 ─ ①발화 검사 ─ ②역추출 일치 ─ ③자연스러움 판정 ─ ④정규화기 재실행
+         ─ labels(A 정답, B 입력) ─ B 응답 생성 ─ ⑤응답 가드 ─ ⑥응답 판정 ─ ⑦DB 왕복 ─> shard
+                                                  (실패: 말투·시드 바꿔 최대 3번)
+[빌드] state 넓히기(정답 불변 확인) ─ 사람 수정 반영 ─ 중복 제거 ─ 할당량 ─ 누수 묶기 ─ 분할 ─> data/final
+[사후] verify_sql --final(DB 저장 규칙) · selftest(가드 자체 시험) · 사람 검수 페이지
+```
+
+### 3.2 생성 단계 검증 (`pipeline.py`, `checks.py`)
+
+시나리오 하나는 아래 순서를 모두 통과해야 저장됩니다. 탈락 수는 S3+T1 합계입니다(전체 30,737건, `data/generated/rejects/`).
+
+| 순서 | 검사 | 코드 | 막는 문제 | 주요 탈락 사유 (건수) |
+|---|---|---|---|---|
+| 0 | **canonical 샘플** | `sampler.build_canonical` | 의도한 pattern이 아닌 시나리오. 정규화기 plan이 pattern에 맞을 때만 씁니다 | – |
+| ① | **발화 검사** | `check_utterance`, `check_utterance_v117`, `check_prior_turns` | 길이, 화자 혼동, 메모 노출, 글말, 질문·메모·예시 베끼기, 시나리오에 없는 숫자, 없는 어림 표현, 문진표 낱말, 틀린 숫자 말투, 앞 대화 모순, 중복 | duplicate_surface 7,815 · unexpected_approx 2,590 · u_bad_number 1,580 · copies_spec 1,419 · new_number 1,326 · copies_question 493 · copied_example 347 |
+| ② | **역추출 일치** | `check_extraction` | 발화가 정답 내용을 실제로 담지 않음. 정답을 보지 않은 LLM이 발화만 보고 다시 추출하고, 그 결과를 정규화기에 돌린 핵심이 정답과 같아야 합니다 | blind_extraction_mismatch 6,002 |
+| ③ | **발화 자연스러움 판정** (LLM) | `prompts.utterance_judge_messages` | 실패 유형 9가지(상담원 말투, 자기 존칭, 작성 지시 노출, 말이 안 되는 숫자, 예·아니요가 모호함, 문진표 낱말 읽기, 보증 군말, 앞뒤 어긋남, 글말) 또는 자연스러움 3점 미만 | utterance_unnatural 4,051 |
+| ④ | **정규화기 재실행** | `checks.normalized` | 근거 구간을 붙인 정답으로 다시 돌린 결과가 기준과 다름. 두 번 돌려 결과가 달라짐 | normalizer_mismatch, not_idempotent |
+| – | **A 정답, B 입력 만들기** | `labels.a_target`, `labels.b_input` | 검사가 아니라 옮기기만 합니다. 값을 새로 정하지 않습니다 | – |
+| ⑤ | **응답 가드** | `check_response` | 의료 조언, 코드 노출, 보고체, 유도 질문, 새 숫자, 끝맺음(END는 인사, NEXT·SAME은 질문), 다른 질환 이름, 없는 어림, 술 단위·기간 바꿈, 양 누락, 질문 두 개, 확인할 때 이전 값을 말하지 않음, 환자 말 복사, 중복 | b_duplicate 1,369 · b_start_near_duplicate 932 · b_no_question 287 · b_new_number 159 |
+| ⑥ | **응답 판정** (LLM) | `prompts.judge_messages` | 응답이 action·next와 맞지 않음, 자연스러움 3점 미만 | b_judge_action_mismatch 1,564 |
+| ⑦ | **DB 왕복** | `checks.RoundTrip` | 기준 문진 DB 임시 복사본에 이전 턴과 이번 턴을 저장하고 조회합니다. `save=true` 칸이 같은 값으로 저장되지 않거나 DB 트리거가 거부함 | db_roundtrip_mismatch, db_save_error |
+
+- ⑤⑥에서 떨어지면 발화는 두고 B 응답만 말투와 시드를 바꿔 최대 3번(`B_TRIES`) 다시 만듭니다.
+- DB가 거부한 사례는 정규화기 이슈 후보로 `data/generated/normalizer_issue_candidates.jsonl`에 남깁니다. 정규화기 코드는 고치지 않습니다.
+- 통과한 레코드의 판정 점수와 역추출 일치 여부는 `validation`(`utterance_judge`, `b_judge`, `extraction_raw_match`)에 남습니다.
+
+### 3.3 빌드 단계 검증 (`build_final.py`)
+
+| 순서 | 처리 | 코드 | 기준 | T1 결과 |
+|---|---|---|---|---|
+| 0 | **state 넓히기** | `prev_state.augment` | A 입력 state를 서비스 규칙(지금 문항, 직전 문항, 참조 원천; SQL.md 7.1)으로 넓히고 정규화기를 다시 돌립니다. 정규화 핵심, A 정답, B 입력이 원래와 모두 같아야 씁니다(최대 30번 다른 흐름 시도) | 7건 제외 (모두 Q7_2: Q7_1 술 종류를 이어받아 정답이 바뀜) |
+| 0-2 | **사람 수정 반영** | `human_edits.apply` | 검수 페이지에서 고친 A 입력, A 정답, B 입력, B 응답의 형식을 검사하고 반영합니다. A와 B의 action이 다르거나 B 입력이 바뀌었는데 응답을 그대로 둔 건은 보고서에 따로 나옵니다 | 현재 0건 |
+| 1 | **중복 제거** | `checks.surface`, MinHash | 정규화 문자열 일치, 글자 3-gram 추정 Jaccard 0.85 이상 | 근접 중복 116건 제외 |
+| 2 | **할당량** | `pipeline.stage_quota` | 칸(문항, pattern, plan)별 누적 할당량까지만 쓰고 넘는 것은 예비분으로 둡니다 | 예비 1,444건 |
+| 3 | **누수 묶기** | DSU | 다른 family끼리 발화 Jaccard 0.70 이상이면 같은 split에 둡니다 | 243개 연결, 여러 split에 걸친 family 0 |
+| 4 | **분할** | `split_groups` | 묶음 해시로 80/10/10. test에 31개 문항, 모든 pattern이 들어가게 합니다 | train 3,982 / val 549 / test 546, test 문항 31·pattern 11 |
+
+결과는 `reports/distribution_T1.json`에 남습니다. 배분 대비 실제 수, 문항 최소량, action·next 분포, state 크기 분포가 들어 있습니다.
+
+### 3.4 사후 검증
+
+| 명령 | 확인하는 것 | 현재 결과 |
+|---|---|---|
+| `verify_sql.py --final` | 최종 레코드마다 두 경로로 같은 DB 결과가 나오는지 봅니다. 문서 경로는 A 입력 state와 A 정답을 `docs/SQL.md` 대응표와 SQL대로 저장하고, 기준 경로는 정규화기의 실제 저장 코드로 저장합니다. 키가 DB 칸인지, 선택지 코드가 있는지, 트리거에 걸리지 않는지도 봅니다 | 5,077 / 5,077 일치 (`reports/verify_sql_final.json`) |
+| `selftest.py` | GPU 없이 도는 자체 시험입니다. pattern·action 조합별 A 정답과 B 입력 변환, 좋은 예가 가드를 통과하는지, 일부러 만든 나쁜 응답 18개를 가드가 잡는지 봅니다 | 변환 문제 0, 좋은 예 탈락 0, 나쁜 응답 17/18 잡음 (`reports/selftest.json`) |
+
+### 3.5 사람 검수
+
+- **검수 큐** (`review/review_queue.csv`): 층(pattern × 문항 묶음)마다 5건, 전체의 5%, 역추출 원시 레이블이 다른 경계 판정 전수, START 일부를 뽑습니다. 이 레코드는 `human_review = pending`, 나머지는 `auto_only`입니다.
+- **검수 페이지**: 레코드마다 OK/문제 판정, 태그, 메모를 남기고 A 입력, A 정답, B 입력, B 응답을 직접 고칠 수 있습니다. 자동 의심 표시(이전 턴과 state의 모순, 다음 문항 일부가 이미 채워짐, 아는 흡연 여부 재질문, 판정 점수 낮음)는 먼저 볼 후보를 고르는 휴리스틱입니다. 정답 판정은 아닙니다.
+- **반영 순서**: 페이지 저장소를 내려받습니다 → `human_edits.py collect <폴더>`로 `review/human_edits.json`을 만듭니다 → `build_final.py --upto T1` → `verify_sql.py --final`.
+  - 사람 수정은 생성 원본 위에 덮어씁니다. 그래서 다시 빌드해도 유지됩니다.
+  - A 정답만 고치면 B 입력은 새 정답으로 다시 계산합니다. B 입력을 직접 고치면 고친 그대로 씁니다.
+- **human_review 값**:
+
+| 값 | 뜻 |
+|---|---|
+| `auto_only` | 자동 검증만 통과 |
+| `pending` | 검수 큐에 들어 있고 아직 판정 없음 |
+| `human_ok` | 사람이 OK 판정 |
+| `human_flagged` | 사람이 문제로 판정했고 고치지 않음 |
+| `human_edited` | 사람이 직접 고침 (`validation.human_edit`에 고친 칸이 남음) |
+
+- 자동 판정은 생성과 같은 모델이 합니다. 그래서 사람 검수를 대신하지 않습니다. 코드는 사람 판정을 만들어 넣지 않습니다.
+
+### 3.6 검증이 잡지 못하는 것
+
+| 빈 곳 | 영향 | 현재 대응 |
+|---|---|---|
+| 이전 턴 환자 말과 state 값이 맞는지 | 예: 앞 턴에서 "뇌졸중은 없어요"라고 했는데 state가 true입니다. 학습 입력에는 이전 턴이 들어가지 않지만 검수할 때 헷갈립니다 | 검수 페이지 의심 표시(후보 15건) |
+| B가 이미 아는 칸을 다시 묻는지 | 다음 문항(Q4_1·Q5_1)의 흡연 상태가 이미 저장됐는데 "지금 피우세요?"라고 다시 묻습니다 | 의심 표시(18건). 가드 규칙은 아직 없음 |
+| 판정 LLM의 오판 | 같은 모델이 쓰고 판정합니다 | 사람 검수 |
+| 역추출이 정답과 같은 쪽으로 틀림 | 발화가 모호한데 두 LLM이 같은 뜻으로 읽으면 통과합니다 | 원시 레이블이 다른 경계 판정 전수를 검수 큐에 넣음 |
+| current_question 형태 | 학습은 대부분 문항 은행 질문을 씁니다. 서비스에서는 B 응답 전체(되짚기 + 질문)가 들어옵니다 | 미결 (7장) |
 
 ## 4. 데이터셋 스키마
 
@@ -172,7 +237,10 @@
 | `data/final/lora_b_{split}.jsonl` | LoRA-B 학습용 messages(system, user=B 입력 JSON, assistant=응답 문장). START 포함 |
 | `data/final/subsets/{1000,2500,5000}_manifest.txt` | 앞에서부터 N개 시나리오의 train scenario_id (nested) |
 | `review/review_queue.csv` | 사람 검수 큐(층별 표본 + 경계 판정 전수 + START 10건) |
-| `reports/distribution_S3.json` | 분포·하한·중복·누수 보고 |
+| `reports/distribution_T1.json` | 분포·하한·중복·누수·state 크기·사람 수정 보고 |
+| `reports/verify_sql_final.json`, `reports/selftest.json` | 사후 검증 결과 |
+
+> git 저장소에는 코드와 문서만 올립니다. `data/`, `reports/`, `review/`는 `.gitignore`로 빠져 있어서 서버의 작업 폴더에만 있습니다.
 
 ### 4.2 마스터 레코드
 
@@ -195,7 +263,8 @@
   "label_source": {"normalizer_output": {...}, "raw_labels": {...}, "canonical_fact": [...], "ruleset_version": "openit-routing-v1.0@..."},
   "generation": {"stage": "S3", "prompt_version": "dataset-v2-prompts-2026-10-13", "utterance": {...}, "response": {...}, ...},
   "validation": {"extraction_raw_match": true, "boundary_case": false, "b_judge": {...}, "utterance_judge": {...},
-                 "human_review": "pending|auto_only", "split": "train"}
+                 "human_review": "auto_only|pending|human_ok|human_flagged|human_edited",
+                 "prev_state": {...}, "split": "train"}
 }
 ```
 
@@ -271,7 +340,10 @@ $PY -B scripts/pipeline.py --stage pilot        # 파일럿
 $PY -B scripts/pipeline.py --stage S3           # 5,000 시나리오 + START 150 (중간에 멈추면 같은 명령으로 이어서)
 $PY -B scripts/pipeline.py --stage T1           # 보충: S3 부족 칸 + P11 정규화기 사례 589 + START 150까지
 $PY -B scripts/build_final.py --upto T1         # 중복 제거·분할·학습 파일·검수 큐·분포 보고 (S3 + T1)
+$PY -B scripts/verify_sql.py --final            # 최종 데이터가 SQL.md 저장 규칙대로 DB에 저장되는지 (3.4)
 $PY -B scripts/export_docs.py                   # docs/PROMPTS.md, EXAMPLES.md, LABEL_TABLES.md 다시 만들기
+$PY -B scripts/export_sql_doc.py                # docs/SQL.md 다시 만들기
+$PY -B scripts/human_edits.py collect <폴더>     # 검수 페이지에서 내려받은 판정·수정 모으기 (3.5)
 ```
 
 - 멈추기: `touch data/generated/STOP` (배치 사이에 멈춤)
@@ -290,7 +362,7 @@ $PY -B scripts/export_docs.py                   # docs/PROMPTS.md, EXAMPLES.md, 
 
 ## 7. 알려진 한계와 미결
 
-- **자동 생성 + 자동 판정입니다.** 사람 검수가 끝나기 전까지 human_review는 pending 또는 auto_only입니다.
+- **자동 생성 + 자동 판정입니다.** 사람 검수가 끝나기 전까지 human_review는 pending 또는 auto_only입니다. 자동 검증이 잡지 못하는 것은 3.6에 있습니다.
 - **범위 답 저장 규약(가운데 값)은 정규화기 규약을 그대로 따랐습니다.** 바꾸려면 정규화기 담당자와 정해야 합니다.
 - **Q7_1·Q7_2 거절·보류는 DB에 저장되지 않습니다.** 반복 키가 비어 있어서입니다(정규화기 이슈 후보). 그래서 이 칸의 SKIP 데이터가 적습니다.
 - **A 입력의 current_question 대부분은 문항 은행 질문입니다.** 서비스에서는 앞 응답의 되짚기가 붙은 질문이 들어옵니다. 예외는 정정·충돌 흐름과 Q1.D01의 START입니다.
