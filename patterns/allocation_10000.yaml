@@ -1,0 +1,485 @@
+# 자동 생성: scripts/build_allocation.py (손으로 고치지 말고 taxonomy.py를 고친 뒤 재실행)
+version: allocation-dataset-v2-2026-10-13
+status: dataset v2 (2026-10-13 사용자 확정 구조). pattern 비율은 2026-10-11 승인 조정안을 그대로 쓴다
+decisions:
+  allocation: proposed (조정안, 2026-10-11 승인)
+  end: Q10 다음은 END(마무리). END 학습량을 늘리려고 Q10 가중치를 1.5 -> 3.0으로 올림
+  start: START(인사 + 첫 질문)는 LoRA-B 전용 레코드로 따로 만든다 (taxonomy.START_TARGET)
+  model: Qwen3-30B-A3B-Instruct-2507
+  source: new_sampled만 사용 (이전 데이터·시드 없음)
+unit: scenario_id (1 시나리오 = LoRA-A 1 + LoRA-B 1). START는 B만
+targets:
+  minimum: 5000
+  goal: 10000
+canonical:
+  max_variants_per_canonical: 4
+  split_unit: scenario_family (= 같은 canonical_scenario의 표현 변형 묶음)
+multi_turn_patterns:
+- P04_reask_fill
+- P05_correction
+- P06_conflict
+- P07_prior_ref
+plan_floor: 0.03
+item_min_10000: 150
+item_weights:
+  Q1.D01: 0.5
+  Q1.D02: 0.5
+  Q1.D03: 0.5
+  Q1.D04: 0.5
+  Q1.D05: 0.5
+  Q1.D06: 0.5
+  Q1.D07: 0.5
+  Q1.D08: 0.5
+  Q1.D09: 0.5
+  Q1.D10: 0.5
+  Q1.D11: 0.5
+  Q2.D01: 0.5
+  Q2.D02: 0.5
+  Q2.D03: 0.5
+  Q2.D04: 0.5
+  Q2.D05: 0.5
+  Q3: 1.0
+  Q6: 1.0
+  Q6_1: 2.0
+  Q4: 1.5
+  Q4_1: 4.0
+  Q5: 1.5
+  Q5_1: 4.0
+  Q7: 4.0
+  Q7_1: 6.0
+  Q7_2: 5.0
+  Q8_1: 1.5
+  Q9_1: 1.5
+  Q10: 3.0
+  Q8_2: 2.0
+  Q9_2: 2.0
+style_tags:
+  formal_full:
+    name: 존댓말 완결문
+    share: 0.18
+  casual_short:
+    name: 짧은 구어 (단답·생략)
+    share: 0.16
+  banmal:
+    name: 반말
+    share: 0.08
+  elderly_verbose:
+    name: 장황·부연 (사연·배경 섞임)
+    share: 0.12
+  hesitant_filler:
+    name: 머뭇거림·필러 (음, 그러니까)
+    share: 0.12
+  hangul_numbers:
+    name: 숫자 한글 표기 (두세 병, 한 갑 반)
+    share: 0.14
+  dialect:
+    name: 사투리
+    share: 0.08
+  stt_noise:
+    name: STT 오류형 (띄어쓰기·동음 오인식)
+    share: 0.12
+style_constraints:
+  min_share_each: 0.05
+  stt_noise_max_share: 0.15
+split:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  unit: scenario_family
+  test_stratification: 31개 문항 x 10개 pattern 각각 최소 1 family
+stages:
+- id: S1
+  cumulative: 1000
+- id: S2
+  cumulative: 2500
+- id: S3
+  cumulative: 5000
+- id: S4
+  cumulative: 10000
+patterns:
+  proposed:
+    share:
+      P01_normal: 0.28
+      P02_range_unit: 0.16
+      P03_partial: 0.1
+      P04_reask_fill: 0.08
+      P05_correction: 0.09
+      P06_conflict: 0.08
+      P07_prior_ref: 0.04
+      P08_unk_refuse: 0.08
+      P09_oos: 0.04
+      P10_boundary: 0.05
+    count_10000:
+      P01_normal: 2801
+      P02_range_unit: 1598
+      P03_partial: 1005
+      P04_reask_fill: 798
+      P05_correction: 899
+      P06_conflict: 798
+      P07_prior_ref: 403
+      P08_unk_refuse: 798
+      P09_oos: 401
+      P10_boundary: 499
+    count_5000:
+      P01_normal: 1403
+      P02_range_unit: 796
+      P03_partial: 501
+      P04_reask_fill: 399
+      P05_correction: 448
+      P06_conflict: 398
+      P07_prior_ref: 206
+      P08_unk_refuse: 398
+      P09_oos: 203
+      P10_boundary: 248
+    expected_plan_share:
+      NEXT: 0.527
+      ASK_MISSING: 0.1005
+      ASK_CLARIFICATION: 0.0829
+      ASK_CONFLICT: 0.0798
+      ACK_CORRECTION: 0.0899
+      ASK_OR_HOLD: 0.0399
+      HOLD_OR_SKIP: 0.0399
+      REDIRECT: 0.0401
+      COMPLETE: 0.0
+    plan_floor_violations: []
+items_10000:
+  Q1.D01: 206
+  Q1.D02: 207
+  Q1.D03: 207
+  Q1.D04: 207
+  Q1.D05: 207
+  Q1.D06: 207
+  Q1.D07: 207
+  Q1.D08: 207
+  Q1.D09: 207
+  Q1.D10: 207
+  Q1.D11: 207
+  Q2.D01: 206
+  Q2.D02: 207
+  Q2.D03: 205
+  Q2.D04: 205
+  Q2.D05: 205
+  Q3: 260
+  Q6: 261
+  Q6_1: 372
+  Q4: 318
+  Q4_1: 597
+  Q5: 316
+  Q5_1: 595
+  Q7: 597
+  Q7_1: 819
+  Q7_2: 705
+  Q8_1: 315
+  Q9_1: 316
+  Q10: 481
+  Q8_2: 372
+  Q9_2: 372
+items_5000:
+  Q1.D01: 105
+  Q1.D02: 105
+  Q1.D03: 105
+  Q1.D04: 105
+  Q1.D05: 105
+  Q1.D06: 105
+  Q1.D07: 105
+  Q1.D08: 105
+  Q1.D09: 105
+  Q1.D10: 105
+  Q1.D11: 105
+  Q2.D01: 106
+  Q2.D02: 106
+  Q2.D03: 105
+  Q2.D04: 105
+  Q2.D05: 101
+  Q3: 130
+  Q6: 128
+  Q6_1: 185
+  Q4: 157
+  Q4_1: 297
+  Q5: 156
+  Q5_1: 296
+  Q7: 297
+  Q7_1: 406
+  Q7_2: 350
+  Q8_1: 156
+  Q9_1: 155
+  Q10: 240
+  Q8_2: 185
+  Q9_2: 184
+cells_10000:
+  Q1.D01:
+    P01_normal: 68
+    P03_partial: 49
+    P04_reask_fill: 19
+    P05_correction: 22
+    P06_conflict: 19
+    P08_unk_refuse: 19
+    P09_oos: 10
+  Q1.D02:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D03:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D04:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D05:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D06:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D07:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D08:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D09:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D10:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q1.D11:
+    P01_normal: 63
+    P03_partial: 46
+    P04_reask_fill: 18
+    P05_correction: 20
+    P06_conflict: 18
+    P07_prior_ref: 15
+    P08_unk_refuse: 18
+    P09_oos: 9
+  Q2.D01:
+    P01_normal: 89
+    P04_reask_fill: 25
+    P05_correction: 29
+    P06_conflict: 25
+    P08_unk_refuse: 25
+    P09_oos: 13
+  Q2.D02:
+    P01_normal: 81
+    P04_reask_fill: 23
+    P05_correction: 26
+    P06_conflict: 23
+    P07_prior_ref: 19
+    P08_unk_refuse: 23
+    P09_oos: 12
+  Q2.D03:
+    P01_normal: 80
+    P04_reask_fill: 23
+    P05_correction: 26
+    P06_conflict: 23
+    P07_prior_ref: 19
+    P08_unk_refuse: 23
+    P09_oos: 11
+  Q2.D04:
+    P01_normal: 80
+    P04_reask_fill: 23
+    P05_correction: 26
+    P06_conflict: 23
+    P07_prior_ref: 19
+    P08_unk_refuse: 23
+    P09_oos: 11
+  Q2.D05:
+    P01_normal: 80
+    P04_reask_fill: 23
+    P05_correction: 26
+    P06_conflict: 23
+    P07_prior_ref: 19
+    P08_unk_refuse: 23
+    P09_oos: 11
+  Q3:
+    P01_normal: 112
+    P04_reask_fill: 32
+    P05_correction: 36
+    P06_conflict: 32
+    P08_unk_refuse: 32
+    P09_oos: 16
+  Q6:
+    P01_normal: 102
+    P04_reask_fill: 29
+    P05_correction: 33
+    P06_conflict: 29
+    P07_prior_ref: 24
+    P08_unk_refuse: 29
+    P09_oos: 15
+  Q6_1:
+    P01_normal: 92
+    P02_range_unit: 121
+    P04_reask_fill: 26
+    P05_correction: 30
+    P06_conflict: 26
+    P08_unk_refuse: 26
+    P09_oos: 13
+    P10_boundary: 38
+  Q4:
+    P01_normal: 137
+    P04_reask_fill: 39
+    P05_correction: 44
+    P06_conflict: 39
+    P08_unk_refuse: 39
+    P09_oos: 20
+  Q4_1:
+    P01_normal: 125
+    P02_range_unit: 164
+    P03_partial: 91
+    P04_reask_fill: 36
+    P05_correction: 40
+    P06_conflict: 36
+    P08_unk_refuse: 36
+    P09_oos: 18
+    P10_boundary: 51
+  Q5:
+    P01_normal: 124
+    P04_reask_fill: 35
+    P05_correction: 40
+    P06_conflict: 35
+    P07_prior_ref: 29
+    P08_unk_refuse: 35
+    P09_oos: 18
+  Q5_1:
+    P01_normal: 119
+    P02_range_unit: 156
+    P03_partial: 86
+    P04_reask_fill: 34
+    P05_correction: 38
+    P06_conflict: 34
+    P07_prior_ref: 28
+    P08_unk_refuse: 34
+    P09_oos: 17
+    P10_boundary: 49
+  Q7:
+    P01_normal: 125
+    P02_range_unit: 164
+    P03_partial: 91
+    P04_reask_fill: 36
+    P05_correction: 40
+    P06_conflict: 36
+    P08_unk_refuse: 36
+    P09_oos: 18
+    P10_boundary: 51
+  Q7_1:
+    P01_normal: 172
+    P02_range_unit: 225
+    P03_partial: 125
+    P04_reask_fill: 49
+    P05_correction: 55
+    P06_conflict: 49
+    P08_unk_refuse: 49
+    P09_oos: 25
+    P10_boundary: 70
+  Q7_2:
+    P01_normal: 141
+    P02_range_unit: 185
+    P03_partial: 103
+    P04_reask_fill: 40
+    P05_correction: 45
+    P06_conflict: 40
+    P07_prior_ref: 33
+    P08_unk_refuse: 40
+    P09_oos: 20
+    P10_boundary: 58
+  Q8_1:
+    P01_normal: 78
+    P02_range_unit: 103
+    P04_reask_fill: 22
+    P05_correction: 25
+    P06_conflict: 22
+    P08_unk_refuse: 22
+    P09_oos: 11
+    P10_boundary: 32
+  Q9_1:
+    P01_normal: 74
+    P02_range_unit: 97
+    P04_reask_fill: 21
+    P05_correction: 24
+    P06_conflict: 21
+    P07_prior_ref: 17
+    P08_unk_refuse: 21
+    P09_oos: 11
+    P10_boundary: 30
+  Q10:
+    P01_normal: 113
+    P02_range_unit: 148
+    P04_reask_fill: 32
+    P05_correction: 36
+    P06_conflict: 32
+    P07_prior_ref: 26
+    P08_unk_refuse: 32
+    P09_oos: 16
+    P10_boundary: 46
+  Q8_2:
+    P01_normal: 92
+    P02_range_unit: 121
+    P04_reask_fill: 26
+    P05_correction: 30
+    P06_conflict: 26
+    P08_unk_refuse: 26
+    P09_oos: 13
+    P10_boundary: 38
+  Q9_2:
+    P01_normal: 87
+    P02_range_unit: 114
+    P04_reask_fill: 25
+    P05_correction: 28
+    P06_conflict: 25
+    P07_prior_ref: 20
+    P08_unk_refuse: 25
+    P09_oos: 12
+    P10_boundary: 36

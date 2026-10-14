@@ -1,0 +1,7 @@
+# 코드만 올린다. 데이터·생성물·검수 큐·실행 보고서는 저장소에 넣지 않는다.
+data/
+reports/
+review/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
